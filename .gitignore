@@ -43,3 +43,10 @@ deploy/certs/*
 scripts/wvp_config.json
 scripts/_channels_snapshot.json
 scripts/_download_out/
+
+# 测试临时数据
+backend/tests/_tmp_data/
+backend/tests/_dbg/
+
+# ZCode 工作目录
+.zcode/
