@@ -1,0 +1,37 @@
+# =============================================================================
+# Docker 构建上下文排除清单（位于仓库根，对三个 Dockerfile 生效）
+# 作用：缩小构建上下文、防止密钥/本地数据进入镜像层
+# =============================================================================
+
+# 版本控制与本地工具
+.git
+.gitignore
+.zcode
+.idea
+.vscode
+
+# Python 缓存与虚拟环境
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+backend/.venv
+**/*.py[cod]
+
+# Node 依赖与构建产物（前端在镜像内构建，产物 COPY --from=build）
+**/node_modules
+frontend/dist
+
+# 运行时数据、备份与日志（一律走命名卷，不进镜像）
+**/data
+backups
+**/backups
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.log
+
+# 密钥与环境变量（证书运行时挂载到 portal-web，构建不需要；.env 只在宿主读取）
+deploy/certs
+deploy/.env
+**/.env

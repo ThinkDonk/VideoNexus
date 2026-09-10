@@ -1,0 +1,94 @@
+# =============================================================================
+# VideoNexus GB28181 视频监管门户 —— Docker Compose 部署编排
+# -----------------------------------------------------------------------------
+# 使用约定：
+#   1. 所有 docker compose 命令均在 deploy/ 目录下执行；本文件中的相对路径
+#      （./certs、./backup、.env 等）一律以 deploy/ 目录为基准。
+#   2. 环境变量统一从 deploy/.env 读取：先 `cp .env.example .env` 并填写
+#      （compose 变量插值与容器 env_file 默认都会读取 compose 文件同目录的 .env）。
+#   3. 证书放 deploy/certs/fullchain.pem + privkey.pem（内网测试可用
+#      certs/gen-selfsigned.sh 自签），由 portal-web 只读挂载。
+#   4. 编写本编排的环境没有 Docker，本文件仅做静态检查；实际构建/启动在部署机：
+#        cd deploy && docker compose build && docker compose up -d
+# =============================================================================
+
+services:
+  # ---------------------------- 后端（FastAPI + SQLite）----------------------
+  portal-backend:
+    build:
+      # 构建上下文 = 仓库根：backend.Dockerfile 内 COPY 路径以仓库根为基准（backend/xxx）
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    image: videonexus-portal-backend:latest
+    container_name: portal-backend
+    restart: unless-stopped
+    # 后端 Settings(pydantic-settings) 与 deploy/.env.example 字段一一对应
+    env_file: .env
+    volumes:
+      - portal-data:/data                # SQLite（/data/portal.db）+ 下载文件（/data/downloads）
+    # 后端需访问宿主所在内网的 WVP/ZLM：
+    #   - WVP_BASE_URL/ZLM_UPSTREAM 若指向内网其他主机，容器默认可直接路由（bridge 网络）；
+    #   - 若指向“部署机本机”的服务，Linux 上需放开下面两行，容器内用
+    #     http://host.docker.internal:<port> 访问宿主（Windows/Mac 的 Docker Desktop 免配置）。
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    healthcheck:
+      # 用容器内 python 直连本机 9000 的健康检查端点（不经过 nginx，不占宿主端口）
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9000/internal/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # 安全：后端不暴露任何宿主端口，仅通过 compose 默认内部网络被 portal-web 访问
+    # ports: []  —— 故意不写 ports
+
+  # ---------------------------- 前端 + Nginx（唯一公网入口）------------------
+  portal-web:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    image: videonexus-portal-web:latest
+    container_name: portal-web
+    restart: unless-stopped
+    # 该服务只需要下面 3 个变量（nginx 模板 envsubst + 时区），不需要后端全套密钥，
+    # 因此不用 env_file，逐项显式声明（最小权限）：
+    environment:
+      # nginx 模板中 envsubst 会替换的两个变量（deploy/README.md 有链路图）：
+      BACKEND_UPSTREAM: portal-backend:9000
+      # 必填：ZLM 流媒体 HTTP 端口完整 URL（含 http:// 前缀），缺失时 compose
+      # 直接报错终止（fail-fast）；nginx 以 proxy_pass $ZLM_UPSTREAM 直接使用
+      ZLM_UPSTREAM: ${ZLM_UPSTREAM:?ZLM_UPSTREAM must be set in deploy/.env (e.g. http://192.168.1.100:8080)}
+      TZ: Asia/Shanghai
+    ports:
+      - "80:80"                          # 仅 301 跳转 https
+      - "443:443"                        # 唯一公网入口（防火墙只需放行 443）
+    volumes:
+      - ./certs:/etc/nginx/certs:ro      # TLS 证书（fullchain.pem / privkey.pem）
+      - portal-data:/data:ro             # 下载文件 X-Accel-Redirect 静态发送（只读，nginx 不写盘）
+    depends_on:
+      portal-backend:
+        condition: service_healthy       # 等后端健康（alembic 迁移完成）再启动
+
+  # ---------------------------- 数据库备份（每日 03:00）----------------------
+  portal-backup:
+    build:
+      context: ..
+      dockerfile: deploy/backup.Dockerfile
+    image: videonexus-portal-backup:latest
+    container_name: portal-backup
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai                  # crond 按本地时间触发 03:00
+    volumes:
+      # 注意：这里不能挂载 :ro —— 后端 SQLite 开启了 WAL 模式（app/core/db.py），
+      # 读取 WAL 库需要对 -shm/-wal 文件的写权限，只读挂载会使 .backup 报
+      # “attempt to write a readonly database”。备份脚本只读 portal.db，不写业务数据。
+      - portal-data:/data
+      - portal-backups:/backups          # 备份产物（.db.gz）+ backup.log，保留最近 30 份
+      - ./backup:/scripts:ro             # 脚本宿主侧副本：改脚本无需重建镜像（crontab 优先用它）
+    # 入口由 backup.Dockerfile 的 ENTRYPOINT（crond -f -l 8）提供，无需 command
+
+# 顶层命名卷：数据与备份均落在 Docker 管理的卷中（docker volume ls 可见）
+volumes:
+  portal-data:
+  portal-backups:

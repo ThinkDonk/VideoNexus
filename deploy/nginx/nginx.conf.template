@@ -1,0 +1,185 @@
+# =============================================================================
+# VideoNexus 门户 Nginx 配置模板
+# -----------------------------------------------------------------------------
+# 构建时拷入 /etc/nginx/templates/default.conf.template，由 nginx 官方镜像的
+# 20-envsubst-on-templates 机制在容器启动时渲染为 /etc/nginx/conf.d/default.conf
+# （同名覆盖镜像自带的 stock 配置）。本文件位于 conf.d 目录，等效于写入 http{}
+# 上下文的片段，因此 limit_req_zone / map 可以直接出现在文件顶层。
+#
+# 变量替换（envsubst 只替换“容器环境中已定义”的变量，由 compose 注入）：
+#   $BACKEND_UPSTREAM -> portal-backend:9000             （host:port，模板补 http:// 前缀）
+#   $ZLM_UPSTREAM     -> http://<zlm-host>:<http-port>   （完整 URL，自带协议前缀）
+#   其余 $host/$uri/$request_uri/$1 等 nginx 运行时变量不会被替换。
+#
+# proxy_pass 含变量的三个关键语义（务必与普通 proxy_pass 区分）：
+#   1) 含变量时 nginx 不在启动期解析域名 —— 必须配置 resolver（此处用 Docker 内嵌
+#      DNS 127.0.0.11，按 valid 周期重解析；后端容器重启换 IP 无需 reload nginx）。
+#   2) 不带 URI 部分（http://$BACKEND_UPSTREAM）：原始请求 URI 原样透传，
+#      因此 /api/ 前缀不做任何改写，后端路由（本就是 /api/...）直接命中。
+#   3) 带 URI 部分且含变量（如 http://$var/）：该 URI 会“整体替换”原始请求 URI，
+#      而不是普通 proxy_pass 的“location 前缀替换”语义！所以 /stream/ 必须先
+#      rewrite 剥前缀；而 /_stream_auth 恰好利用该语义发送固定路径。
+# =============================================================================
+
+# 登录接口限流：按客户端 IP 10 次/分钟（10m 共享内存存 IP 状态）
+limit_req_zone $binary_remote_addr zone=login_zone:10m rate=10r/m;
+
+# WebSocket 升级头映射：/stream/ 的 WS-FLV 播放流需要
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# ------------------------------ 80 -> 301 -> 443 -----------------------------
+server {
+    listen 80;
+    server_name _;
+    # HTTP 一律跳转 HTTPS；HSTS 由 443 server 下发
+    return 301 https://$host$request_uri;
+}
+
+# ------------------------------ HTTPS 主入口 ---------------------------------
+server {
+    listen 443 ssl;
+    http2 on;                          # nginx >= 1.25.1 语法（镜像为 1.27）
+    server_name _;
+
+    # --- TLS 证书：正式证书替换 deploy/certs/ 下同名文件后 `docker compose restart portal-web` ---
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+    # 仅 TLS1.2/1.3，禁用老旧协议
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # HSTS：浏览器此后强制走 HTTPS。注意 nginx 的 add_header 继承规则：location 内
+    # 只要自定义了任意 add_header，server 级的 HSTS 即不再继承，须在该 location 重复声明
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # 隐藏版本号；后端均为小 JSON 请求，请求体上限 2m
+    server_tokens off;
+    client_max_body_size 2m;
+
+    # Docker 内嵌 DNS：proxy_pass 含变量时运行期解析容器名（见文件头说明 1)
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+
+    # SPA 文本资源 gzip
+    gzip on;
+    gzip_min_length 1k;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # ============================ 前端静态资源 ============================
+    # 带 hash 的 js/css/字体/图片：强缓存 7 天。
+    # ^~ 的作用：阻止文件末尾正则之外的其它正则 location 抢占这些前缀请求，
+    # 同时也防止 /api/xxx.js 之类路径被下面的静态资源正则误捕获（正则优先于普通前缀）。
+    location ~* \.(?:js|css|woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp)$ {
+        expires 7d;
+        add_header Cache-Control "public";
+        # 本 location 自定义了 add_header，server 级 HSTS 需重复声明（继承规则见上）
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        try_files $uri =404;
+    }
+
+    # index.html 不缓存：发版后立即可见（SPA 路由 fallback 最终也落到此文件）
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=31536000" always;
+    }
+
+    # SPA：前端路由刷新/直达时回退 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # ============================ 后端 API ============================
+    # 登录接口单独限流：10r/m + burst=5（nodelay：突发 5 个立即处理，超出直接 429）
+    location = /api/auth/login {
+        limit_req zone=login_zone burst=5 nodelay;
+        limit_req_status 429;
+
+        # 无 URI 部分：原始 URI（/api/auth/login 及查询串）原样透传（见文件头说明 2)
+        proxy_pass http://$BACKEND_UPSTREAM;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;   # 后端据此生成 wss:// 播放地址等
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
+    # 其余业务 API（^~：优先于正则 location，防止 /api/ 下带静态后缀的路径被截胡）。
+    # 后端响应里的 X-Accel-Redirect 头由 nginx 默认机制拦截并转为内部跳转到
+    # /protected-download/（无需额外配置；该头本身不会下发给客户端，
+    # Content-Disposition 等其余响应头对客户端保留 —— 下载文件名由此透传）。
+    location ^~ /api/ {
+        proxy_pass http://$BACKEND_UPSTREAM;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 120s;    # 覆盖 WVP 异步点播/下载超时（WVP_REQUEST_TIMEOUT=70s）
+        proxy_send_timeout 120s;
+    }
+
+    # ==================== 播放流鉴权子请求（auth_request） ====================
+    # internal：客户端不可直接访问（直接访问返回 404）
+    location = /_stream_auth {
+        internal;
+        # 变量 + URI 部分：URI 整体替换 —— 恰好固定转发到后端鉴权端点
+        # （对应 app/api/internal.py 的 /internal/stream/auth，见文件头说明 3)
+        proxy_pass http://$BACKEND_UPSTREAM/internal/stream/auth;
+        # 鉴权是 GET 子请求：去请求体，保留原始请求头（auth_request 自动透传 Cookie）
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        # 把原始请求 URI（含 ?st=stream_token）交给后端做会话/流匹配校验
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Real-IP $remote_addr;    # 后端审计日志记录真实来源 IP
+    }
+
+    # ============================ 播放流代理（ZLM） ============================
+    # 后端签发的播放地址形如 /stream/rtp/<id>.live.flv、/stream/rtp/<id>/hls.m3u8，
+    # 鉴权通过后转发 ZLM；401/403 原样返回客户端（地址外泄/越权拉流会被审计）
+    location ^~ /stream/ {
+        auth_request /_stream_auth;
+
+        # 剥掉 /stream 前缀：/stream/rtp/a.live.flv -> ZLM 的 /rtp/a.live.flv。
+        # proxy_pass 含变量时不做 location 前缀替换（见文件头说明 3)，必须 rewrite；
+        # rewrite 未以 ? 结尾，原始查询串（st=...）自动保留。
+        # ZLM_UPSTREAM 为完整 URL（http://host:port，含协议前缀），nginx 要求
+        # 含变量的 proxy_pass 求值结果必须带 “://”。
+        rewrite ^/stream/(.*)$ /$1 break;
+        proxy_pass $ZLM_UPSTREAM;
+
+        # HTTP-FLV 长连接 / WS-FLV 协议升级
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # 流媒体持续推送：关闭缓冲，读写超时对齐播放会话上限（PLAY_SESSION_MAX_HOURS=12h）
+        proxy_buffering off;
+        proxy_read_timeout 12h;
+        proxy_send_timeout 12h;
+    }
+
+    # ====================== 下载文件内部静态发送（X-Accel） ======================
+    # 仅可由后端 X-Accel-Redirect 触发（客户端直接访问返回 404，杜绝绕过鉴权）：
+    # GET /api/download-tasks/{id}/file -> 后端校验归属/有效期后返回
+    #   X-Accel-Redirect: /protected-download/<file_name>
+    location ^~ /protected-download/ {
+        internal;
+        alias /data/downloads/;     # 后端 DATA_DIR=/data，下载文件位于 /data/downloads
+        limit_rate 4m;              # 每连接 4MB/s（约 32Mbps）限速，与 DOWNLOAD_SPEED 呼应
+    }
+}
