@@ -38,3 +38,8 @@ deploy/certs/*
 
 # 构建产物
 *.log
+
+# 第0期验证脚本的本地环境配置与产物
+scripts/wvp_config.json
+scripts/_channels_snapshot.json
+scripts/_download_out/

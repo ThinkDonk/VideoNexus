@@ -1,0 +1,16 @@
+{
+  "wvp_base_url": "http://192.168.1.100:18080",
+  "wvp_api_key": "",
+  "wvp_username": "admin",
+  "wvp_password": "admin",
+  "zlm_base_url": "http://192.168.1.100:8080",
+  "zlm_secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+  "test": {
+    "device_id": "",
+    "channel_id": "",
+    "record_start": "2026-09-09 00:00:00",
+    "record_end": "2026-09-09 23:59:59",
+    "download_speed": 4,
+    "download_max_wait_minutes": 30
+  }
+}
