@@ -185,4 +185,10 @@ def session_payload(session: PlaySession, channel: Channel, host: str) -> dict:
         "stream": session.stream,
         "urls": build_stream_urls(host, session.app, session.stream, session.stream_token),
         "expiresAt": fmt_dt(session.expires_at),
+        # 设备能力标记：不支持时前端置灰按钮（标记逻辑见 api/playback.py）
+        "capabilities": {
+            "pause": channel.pause_supported,
+            "seek": True,
+            "speed": True,
+        },
     }

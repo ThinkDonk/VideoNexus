@@ -39,6 +39,7 @@ class WvpStub:
     def __init__(self):
         self.play_calls = []
         self.download_progress_calls = 0
+        self.pause_fails = False  # 模拟不支持暂停/恢复的设备（WVP 固定报错）
         self._download_done_after = 2  # 第 2 次轮询后完成
         self.download_file_url = "http://zlm-fake/index/api/downloadFile?file_path=/opt/x.mp4"
 
@@ -70,6 +71,9 @@ class WvpStub:
         return {"app": "rtp", "stream": f"{device_id}_{channel_id}_20260901080000_20260901090000"}
 
     async def playback_control(self, op, stream, arg=None):
+        if self.pause_fails and op in ("pause", "resume"):
+            from app.services.wvp import WvpError
+            raise WvpError("暂停RTP接收失败" if op == "pause" else "继续RTP接收失败", 400)
         return {}
 
     async def playback_stop(self, device_id, channel_id, stream):

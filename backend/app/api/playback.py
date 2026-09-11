@@ -84,25 +84,41 @@ async def _own_session(db, user: User, session_id: int):
     return await get_own_session(db, user, session_id)
 
 
+# WVP 对不支持暂停/恢复的设备会固定返回这两个错误（pauseRtpCheck 调 ZLM 失败）
+_UNSUPPORTED_PAUSE_MARKS = ("暂停RTP接收失败", "继续RTP接收失败")
+
+
+async def _pause_control(session_id: int, op: str, user: User, db: AsyncSession) -> None:
+    """暂停/恢复共用逻辑：实测失败即把该通道标记为不支持，便于前端置灰。"""
+    session = await _own_session(db, user, session_id)
+    channel = await get_channel_or_404(db, session.channel_id)
+    try:
+        await wvp_service.get_wvp().playback_control(op, session.stream)
+    except WvpError as e:
+        if any(mark in str(e) for mark in _UNSUPPORTED_PAUSE_MARKS):
+            if channel.pause_supported:
+                channel.pause_supported = False
+                await db.commit()
+            raise HTTPException(status_code=409,
+                                detail="该设备不支持回放暂停/恢复，可直接使用停止")
+        raise HTTPException(status_code=502, detail=f"{'暂停' if op == 'pause' else '恢复'}失败: {e}")
+    # 成功则自愈（设备固件升级或换设备后恢复按钮可用）
+    if not channel.pause_supported:
+        channel.pause_supported = True
+        await db.commit()
+
+
 @router.post("/playback/sessions/{session_id}/pause")
 async def playback_pause(session_id: int, user: User = Depends(get_current_user),
                          db: AsyncSession = Depends(get_db)):
-    session = await _own_session(db, user, session_id)
-    try:
-        await wvp_service.get_wvp().playback_control("pause", session.stream)
-    except WvpError as e:
-        raise HTTPException(status_code=502, detail=f"暂停失败: {e}")
+    await _pause_control(session_id, "pause", user, db)
     return {"ok": True}
 
 
 @router.post("/playback/sessions/{session_id}/resume")
 async def playback_resume(session_id: int, user: User = Depends(get_current_user),
                          db: AsyncSession = Depends(get_db)):
-    session = await _own_session(db, user, session_id)
-    try:
-        await wvp_service.get_wvp().playback_control("resume", session.stream)
-    except WvpError as e:
-        raise HTTPException(status_code=502, detail=f"恢复失败: {e}")
+    await _pause_control(session_id, "resume", user, db)
     return {"ok": True}
 
 

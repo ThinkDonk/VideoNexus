@@ -70,8 +70,20 @@
       </div>
       <div class="control-bar">
         <el-button-group>
-          <el-button size="small" :disabled="!session || paused" @click="doPause">暂停</el-button>
-          <el-button size="small" :disabled="!session || !paused" @click="doResume">恢复</el-button>
+          <el-tooltip
+            :disabled="pauseSupported"
+            content="该设备不支持暂停/恢复，可直接使用停止"
+            placement="top"
+          >
+            <el-button size="small" :disabled="!session || paused || !pauseSupported" @click="doPause">暂停</el-button>
+          </el-tooltip>
+          <el-tooltip
+            :disabled="pauseSupported"
+            content="该设备不支持暂停/恢复，可直接使用停止"
+            placement="top"
+          >
+            <el-button size="small" :disabled="!session || !paused || !pauseSupported" @click="doResume">恢复</el-button>
+          </el-tooltip>
           <el-button size="small" type="danger" plain :disabled="!session" @click="doStop">停止</el-button>
         </el-button-group>
         <span class="ctl-label">进度</span>
@@ -126,6 +138,8 @@ const pbStarting = ref(false)
 
 const session = ref(null) // { sessionId, duration }
 const paused = ref(false)
+// 设备是否支持暂停/恢复（后端实测标记，false 时按钮置灰并提示）
+const pauseSupported = ref(true)
 const sliderVal = ref(0)
 const speed = ref(1)
 
@@ -190,6 +204,7 @@ async function playRecord(row) {
     const url = res.urls?.wsFlv || res.urls?.flv
     if (!url) throw new Error('未获取到回放地址')
     session.value = { sessionId: res.sessionId, duration: row.durationSeconds || 0 }
+    pauseSupported.value = res.capabilities?.pause !== false
     sliderVal.value = 0
     speed.value = 1
     paused.value = false
@@ -202,19 +217,24 @@ async function playRecord(row) {
 }
 
 async function doPause() {
-  if (!session.value) return
+  if (!session.value || !pauseSupported.value) return
   try {
     await playbackApi.pause(session.value.sessionId)
     paused.value = true
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {
+    // 设备不支持（409）时立即置灰，避免反复点击报错；提示由拦截器展示
+    if (e?.response?.status === 409) pauseSupported.value = false
+  }
 }
 
 async function doResume() {
-  if (!session.value) return
+  if (!session.value || !pauseSupported.value) return
   try {
     await playbackApi.resume(session.value.sessionId)
     paused.value = false
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {
+    if (e?.response?.status === 409) pauseSupported.value = false
+  }
 }
 
 async function doStop() {

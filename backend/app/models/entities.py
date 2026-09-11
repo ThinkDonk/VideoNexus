@@ -58,6 +58,9 @@ class Channel(Base, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     online: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)  # 最近一次同步是否仍存在于 WVP
+    # 回放暂停/恢复能力：部分设备（如海康 NVR）不支持，WVP 会固定报错；
+    # 实测失败即置 false，播放接口据此让前端置灰按钮（成功后自愈）
+    pause_supported: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
