@@ -1,10 +1,10 @@
 {
-  "wvp_base_url": "http://192.168.1.100:18080",
+  "wvp_base_url": "http://192.168.1.100:18978",
   "wvp_api_key": "",
   "wvp_username": "admin",
-  "wvp_password": "admin",
+  "wvp_password": "",
   "zlm_base_url": "http://192.168.1.100:8080",
-  "zlm_secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+  "zlm_secret": "",
   "test": {
     "device_id": "",
     "channel_id": "",

@@ -39,12 +39,24 @@ def main():
             print(f"    {key:10s} = {stream[key]}")
 
     # http-flv 探测：读前 64KB 判断流是否真的有数据
-    flv_url = stream.get("https_flv") or stream.get("flv")
+    # WVP 返回地址的 host 取决于其 Stream_IP 配置（可能为 127.0.0.1），
+    # 探测前用 zlm_base_url 改写 host，保证从本机可达。
+    from urllib.parse import urlsplit, urlunsplit
+
+    def rewrite(url: str) -> str:
+        base = (cfg.get("zlm_base_url") or "").rstrip("/")
+        if not base:
+            return url
+        b, s = urlsplit(base), urlsplit(url)
+        return urlunsplit((b.scheme, b.netloc, s.path, s.query, ""))
+
+    flv_url = rewrite(stream.get("https_flv") or stream.get("flv"))
     if flv_url:
         try:
             t0 = time.time()
             with requests.get(flv_url, stream=True, timeout=(5, 15)) as r:
-                print(f"  [探测] http-flv HTTP 状态: {r.status_code} content-type={r.headers.get('Content-Type')}")
+                print(f"  [探测] http-flv(经 {urlsplit(flv_url).netloc}) 状态: {r.status_code} "
+                      f"content-type={r.headers.get('Content-Type')}")
                 first = next(r.iter_content(64 * 1024), b"")
                 print(f"  [探测] 首块 {len(first)} 字节，用时 {time.time()-t0:.2f}s -> "
                       f"{'有流 ✓' if len(first) > 0 else '空流 ✗（设备可能不在线）'}")
