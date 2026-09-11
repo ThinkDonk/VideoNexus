@@ -27,9 +27,14 @@ data/
 *.db-shm
 backups/
 
-# 证书与密钥（部署时挂载，绝不入库）
-deploy/certs/*
-!deploy/certs/.gitkeep
+# 证书与密钥（绝不入库）；目录下的工具脚本与占位文件需保留
+# 注意：不要用 deploy/certs/* 通配，否则会把 gen-selfsigned.sh 一并忽略
+deploy/certs/*.pem
+deploy/certs/*.key
+deploy/certs/*.crt
+deploy/certs/*.pfx
+deploy/certs/*.p12
+deploy/certs/*.jks
 .env
 *.pem
 *.key
