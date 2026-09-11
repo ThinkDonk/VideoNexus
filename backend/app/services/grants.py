@@ -14,10 +14,16 @@ class GrantDenied(HTTPException):
 
 
 async def get_channel_or_404(db: AsyncSession, channel_pk: int) -> Channel:
+    """取通道；不存在或已从 WVP 目录中消失（active=False）都视为不可用。
+
+    失效通道可能仍有历史授权，这里统一挡住，避免带着无效参数去调 WVP 再报 502。
+    """
     r = await db.execute(select(Channel).where(Channel.id == channel_pk))
     ch = r.scalar_one_or_none()
     if ch is None:
         raise HTTPException(status_code=404, detail="通道不存在")
+    if not ch.active:
+        raise HTTPException(status_code=404, detail="通道已失效（已从设备目录中移除）")
     return ch
 
 

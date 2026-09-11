@@ -235,6 +235,7 @@ def _grant_ok(g: ChannelGrant, channel: Channel | None = None) -> dict:
     return {"id": g.id, "channelId": g.channel_id,
             "channelGbId": channel.channel_id if channel else None,
             "channelName": (channel.display_name or channel.name) if channel else None,
+            "active": channel.active if channel else None,
             "canLive": g.can_live, "canPlayback": g.can_playback, "canDownload": g.can_download,
             "validFrom": fmt_dt(g.valid_from), "validUntil": fmt_dt(g.valid_until),
             "grantedBy": g.granted_by, "createdAt": fmt_dt(g.created_at)}
@@ -267,6 +268,9 @@ async def save_grants(user_id: int, body: GrantsSaveRequest, request: Request,
         ch = (await db.execute(select(Channel).where(Channel.id == item.channelId))).scalar_one_or_none()
         if ch is None:
             raise HTTPException(status_code=400, detail=f"通道 {item.channelId} 不存在")
+        if not ch.active:
+            raise HTTPException(status_code=400,
+                                detail=f"通道「{ch.display_name or ch.name}」已失效，无法授权")
         if not (item.canLive or item.canPlayback or item.canDownload):
             continue  # 全关 = 不授权
         incoming[item.channelId] = item

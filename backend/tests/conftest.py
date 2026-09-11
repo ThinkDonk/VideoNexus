@@ -40,6 +40,8 @@ class WvpStub:
         self.play_calls = []
         self.download_progress_calls = 0
         self.pause_fails = False  # 模拟不支持暂停/恢复的设备（WVP 固定报错）
+        # 当前"设备目录上报"的通道（可动态调整，用于模拟通道从目录中消失）
+        self.channel_ids = [self.CHANNEL_A, self.CHANNEL_B]
         self._download_done_after = 2  # 第 2 次轮询后完成
         self.download_file_url = "http://zlm-fake/index/api/downloadFile?file_path=/opt/x.mp4"
 
@@ -49,10 +51,12 @@ class WvpStub:
 
     async def channels(self, device_id, page=1, count=100):
         assert device_id == self.DEVICE
-        return {"total": 2, "list": [
+        all_channels = [
             {"deviceId": self.CHANNEL_A, "name": "1号仓-北门", "status": "ON"},
             {"deviceId": self.CHANNEL_B, "name": "1号仓-南门", "status": "ON"},
-        ]}
+        ]
+        items = [c for c in all_channels if c["deviceId"] in self.channel_ids]
+        return {"total": len(items), "list": items}
 
     async def play_start(self, device_id, channel_id):
         self.play_calls.append(("play", device_id, channel_id))

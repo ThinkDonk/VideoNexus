@@ -27,6 +27,9 @@ async def channel_tree(user: User = Depends(get_current_user),
             select(Channel, ChannelGrant)
             .join(ChannelGrant, ChannelGrant.channel_id == Channel.id)
             .where(ChannelGrant.user_id == user.id)
+            # 通道必须仍在 WVP 目录中（active）：设备侧删除/换编码后，
+            # 历史授权可能残留，不能让它继续出现在用户树上
+            .where(Channel.active.is_(True))
             .order_by(Channel.device_id, Channel.channel_id)
         )
         items = []
