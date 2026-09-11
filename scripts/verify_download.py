@@ -130,7 +130,7 @@ def main():
         needs_secret = False
 
     print(f"\n  结论: ZLM downloadFile {'需要' if needs_secret else '不需要'} secret 参数")
-    print("         （门户侧无论如何都会由后端代理下载文件，secret 不会下发给银行用户）")
+    print("         （门户侧无论如何都会由后端代理下载文件，secret 不会下发给门户用户）")
 
     # 完整下载文件核对
     OUT_DIR.mkdir(exist_ok=True)

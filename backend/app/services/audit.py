@@ -1,6 +1,6 @@
 """审计服务：全站唯一的审计写入入口，只 INSERT，永不 UPDATE/DELETE。
 
-动作常量集中在这里，便于与银行的合规字段清单对照。
+动作常量集中在这里，便于与合规审查的字段清单对照。
 """
 import json
 from typing import Any

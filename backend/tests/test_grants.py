@@ -1,4 +1,4 @@
-"""越权矩阵测试：银行用户只允许访问被授权的通道与动作，其余一律 403 且留审计。"""
+"""越权矩阵测试：机构用户只允许访问被授权的通道与动作，其余一律 403 且留审计。"""
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -25,13 +25,13 @@ async def seeded(app_ctx):
         r = await client.get("/api/admin/channels")
         channels = {c["channelId"]: c for c in r.json()["list"]}
         assert WvpStub.CHANNEL_A in channels and WvpStub.CHANNEL_B in channels
-        # 机构 + 银行用户
+        # 机构 + 机构用户
         r = await client.post("/api/admin/orgs", json={
-            "name": "测试银行", "status": True, "maxConcurrentPlays": 4, "quotaGb": 50})
+            "name": "测试机构", "status": True, "maxConcurrentPlays": 4, "quotaGb": 50})
         assert r.status_code == 201, r.text
         org_id = r.json()["id"]
         r = await client.post("/api/admin/users", json={
-            "username": "banker1", "password": "Banker@123", "displayName": "银行客户经理",
+            "username": "banker1", "password": "Banker@123", "displayName": "机构用户",
             "orgId": org_id, "role": "BANK_USER"})
         assert r.status_code == 201, r.text
         uid = r.json()["id"]

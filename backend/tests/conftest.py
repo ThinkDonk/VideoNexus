@@ -131,7 +131,7 @@ async def client(app_ctx):
 async def make_client(app_ctx):
     """工厂 fixture：每个调用方获得独立的 AsyncClient 实例（独立 cookie 罐）。
 
-    同一测试内需要两种登录身份（如 admin + 银行用户）时，必须各自用
+    同一测试内需要两种登录身份（如 admin + 机构用户）时，必须各自用
     make_client() 创建实例，否则后登录的一方会覆盖共享 cookie 导致 403。
     """
     app, _ = app_ctx

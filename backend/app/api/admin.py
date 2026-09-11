@@ -146,7 +146,7 @@ async def create_user(body: UserCreate, request: Request, admin: User = Depends(
     if r.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")
     if body.role == "BANK_USER" and body.orgId is None:
-        raise HTTPException(status_code=400, detail="银行用户必须归属某机构")
+        raise HTTPException(status_code=400, detail="机构用户必须归属某机构")
     user = User(username=body.username, password_hash=hash_password(body.password),
                 display_name=body.displayName, org_id=body.orgId, role=body.role,
                 must_change_password=True)

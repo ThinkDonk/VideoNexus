@@ -44,6 +44,9 @@ scripts/wvp_config.json
 scripts/_channels_snapshot.json
 scripts/_download_out/
 
+# 内部文档（仅本地保留，不入库）
+docs/
+
 # 测试临时数据
 backend/tests/_tmp_data/
 backend/tests/_dbg/

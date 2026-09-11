@@ -47,7 +47,7 @@ class User(Base, TimestampMixin):
 
 
 class Channel(Base, TimestampMixin):
-    """通道镜像：数据来源为 WVP 定时同步，display_name 为对银行展示的可编辑别名。"""
+    """通道镜像：数据来源为 WVP 定时同步，display_name 为对外展示的可编辑别名。"""
     __tablename__ = "channels"
     __table_args__ = (UniqueConstraint("device_id", "channel_id", name="uq_channel_device"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

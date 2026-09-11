@@ -1,34 +1,38 @@
 <template>
-  <div class="login-page">
-    <div class="login-card">
-      <div class="login-title">
-        <el-icon :size="28" color="#409eff"><VideoCamera /></el-icon>
-        <h2>视频监管门户</h2>
-      </div>
-      <div class="login-sub">仓库质押监管视频开放平台</div>
-      <el-form ref="formRef" :model="form" :rules="rules" size="large" @keyup.enter="submit">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="用户名" :prefix-icon="User" autocomplete="username" />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" show-password placeholder="密码" :prefix-icon="Lock" autocomplete="current-password" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" class="login-btn" :loading="submitting" @click="submit">登 录</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-  </div>
+  <AuthLayout title="欢迎登录">
+    <el-form ref="formRef" :model="form" :rules="rules" size="large" class="login-form" @keyup.enter="submit">
+      <el-form-item prop="username">
+        <el-input v-model="form.username" placeholder="账号" :prefix-icon="User" autocomplete="username" />
+      </el-form-item>
+      <el-form-item prop="password">
+        <el-input
+          v-model="form.password"
+          type="password"
+          show-password
+          placeholder="密码"
+          :prefix-icon="Lock"
+          autocomplete="current-password"
+        />
+      </el-form-item>
+      <el-form-item style="width: 100%">
+        <el-button type="primary" class="login-btn" :loading="submitting" @click="submit">
+          <span v-if="!submitting">登 录</span>
+          <span v-else>登 录 中...</span>
+        </el-button>
+      </el-form-item>
+    </el-form>
+  </AuthLayout>
 </template>
 
 <script setup>
-// 登录页：成功后拉取用户信息，按 redirect 跳转
+// 登录页：成功后拉取用户信息，按 redirect 跳转（强制改密由主布局弹窗处理）
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock, VideoCamera } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { authApi } from '../api'
+import AuthLayout from '../components/AuthLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,7 +42,7 @@ const formRef = ref(null)
 const submitting = ref(false)
 const form = reactive({ username: '', password: '' })
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
@@ -60,38 +64,39 @@ async function submit() {
 </script>
 
 <style scoped>
-.login-page {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #1c2b3a 0%, #0e1a26 100%);
+.login-form {
+  width: 100%;
 }
-.login-card {
-  width: 380px;
-  padding: 36px 32px 28px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+
+/* 输入框聚焦：主色边框 + 柔光 */
+.login-form :deep(.el-input__inner) {
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
-.login-title {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+.login-form :deep(.el-input__inner:focus) {
+  border-color: #409eff;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
 }
-.login-title h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #303133;
-}
-.login-sub {
-  text-align: center;
-  color: #909399;
-  font-size: 13px;
-  margin: 8px 0 24px;
-}
+
+/* 登录按钮：主色渐变 + 悬浮微光 */
 .login-btn {
   width: 100%;
+  height: 42px;
+  font-size: 14px;
+  letter-spacing: 6px;
+  border: none;
+  background: linear-gradient(90deg, #409eff, #79bbff);
+  background-size: 150% 100%;
+  box-shadow: 0 6px 14px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s;
+}
+.login-btn:hover,
+.login-btn:focus {
+  background: linear-gradient(90deg, #409eff, #79bbff);
+  background-position: 100% 0;
+  box-shadow: 0 8px 18px rgba(64, 158, 255, 0.45);
+  transform: translateY(-1px);
+}
+.login-btn:active {
+  transform: translateY(0);
 }
 </style>

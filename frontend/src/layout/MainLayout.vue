@@ -2,10 +2,10 @@
   <el-container class="layout">
     <el-aside width="200px" class="aside">
       <div class="logo">
-        <el-icon :size="22"><VideoCamera /></el-icon>
+        <PortalLogo compact />
         <span>视频监管门户</span>
       </div>
-      <el-menu :default-active="activeMenu" router background-color="#001529" text-color="#a6adb4" active-text-color="#ffffff" class="menu">
+      <el-menu :default-active="activeMenu" router background-color="#16385f" text-color="rgba(255,255,255,0.68)" active-text-color="#ffffff" class="menu">
         <el-menu-item index="/live">
           <el-icon><VideoPlay /></el-icon><span>实时预览</span>
         </el-menu-item>
@@ -97,11 +97,12 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  VideoCamera, VideoPlay, VideoCameraFilled, Download, OfficeBuilding,
+  VideoPlay, VideoCameraFilled, Download, OfficeBuilding,
   User, Connection, Key, Tickets, Document, UserFilled
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { authApi } from '../api'
+import PortalLogo from '../components/PortalLogo.vue'
 import { roleLabel } from '../constants'
 
 const route = useRoute()
@@ -187,7 +188,7 @@ function onCommand(cmd) {
   height: 100vh;
 }
 .aside {
-  background: #001529;
+  background: #16385f;
   display: flex;
   flex-direction: column;
 }
@@ -209,7 +210,7 @@ function onCommand(cmd) {
 }
 .menu-group-title {
   padding: 14px 20px 6px;
-  color: #5a6470;
+  color: rgba(255, 255, 255, 0.45);
   font-size: 12px;
 }
 .header {

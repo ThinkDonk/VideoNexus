@@ -43,7 +43,7 @@ export const TASK_STATUS = {
 export const SPEED_OPTIONS = [0.25, 0.5, 1, 2, 4, 8]
 
 export const ROLES = [
-  { value: 'BANK_USER', label: '银行用户' },
+  { value: 'BANK_USER', label: '机构用户' },
   { value: 'ADMIN', label: '管理员' },
   { value: 'AUDITOR', label: '审计' }
 ]
