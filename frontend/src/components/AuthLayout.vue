@@ -34,7 +34,7 @@ defineProps({
   title: { type: String, default: '欢迎登录' },
   brandName: { type: String, default: '视频监管门户' },
   brandSubtitle: { type: String, default: 'GB28181 Video Supervision Portal' },
-  slogan: { type: String, default: '远程巡库 · 风险可见' }
+  slogan: { type: String, default: '精准授权，全链审计' }
 })
 
 // 版权年份动态取当前年，避免每年手工更新
