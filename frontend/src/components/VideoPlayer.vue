@@ -32,6 +32,9 @@ function createPlayer() {
     container: containerRef.value,
     videoBuffer: 0.2,
     isResize: true,
+    // jessibuca 默认按页面相对路径找 decoder.js（会 404）；
+    // 显式指向本地 vendor 路径，decoder.js 内部再按自身目录加载 decoder.wasm
+    decoder: '/vendor/jessibuca/decoder.js',
     text: '',
     loadingText: '加载中…',
     debug: false,

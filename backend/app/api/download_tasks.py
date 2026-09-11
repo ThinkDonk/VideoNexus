@@ -129,16 +129,26 @@ async def download_file(task_id: int, request: Request, response: Response,
                       params={"fileSize": task.file_size},
                       ip=client_ip(request), ua=request.headers.get("user-agent"))
 
-    # 经 Nginx internal location 限速发送（X-Accel-Redirect），本地直连后端时无 Nginx，退化为重定向说明
     channel = (await db.execute(select(Channel).where(Channel.id == task.channel_id))).scalar_one_or_none()
     filename = f"{channel.display_name or channel.name or 'record'}_{task.id}.mp4" if channel else f"{task.id}.mp4"
-    # 空响应体 + X-Accel-Redirect：由 Nginx internal location 提供真实文件。
     # Content-Disposition 需符合 RFC 6266：HTTP 头只能 latin-1 编码，
     # 中文文件名用 filename*=UTF-8'' 传输，filename 字段退化为 ASCII 兜底名。
     fallback = filename if filename.isascii() else f"download_{task.id}.mp4"
+    disposition = (f'attachment; filename="{fallback}"; '
+                   f"filename*=UTF-8''{quote(filename, safe='')}")
+
+    # 本地开发模式（无 Nginx）：后端直接流式发送文件（无限速）
+    if get_settings().dev_stream_proxy:
+        from fastapi.responses import FileResponse
+        file_path = get_settings().downloads_dir / task.file_name
+        if not file_path.exists():
+            raise HTTPException(status_code=410, detail="文件已丢失或被清理")
+        return FileResponse(file_path, media_type="video/mp4",
+                            headers={"Content-Disposition": disposition})
+
+    # 生产：空响应体 + X-Accel-Redirect，由 Nginx internal location 限速发送真实文件。
     return Response(status_code=200, headers={
         "X-Accel-Redirect": f"/protected-download/{task.file_name}",
-        "Content-Disposition": (f'attachment; filename="{fallback}"; '
-                                f"filename*=UTF-8''{quote(filename, safe='')}"),
+        "Content-Disposition": disposition,
         "Content-Type": "video/mp4",
     })

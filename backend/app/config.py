@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     zlm_download_base_url: str = ""  # 可选：改写 WVP 返回的 ZLM 下载直链 host（门户后端拉文件用）
     zlm_secret: str = ""
 
+    # --- 本地开发（无 Nginx）---
+    dev_stream_proxy: bool = False  # true=后端自身承担 /stream/ 鉴权与转发（本地跑通播放用）
+
     # --- 初始管理员（首次启动无管理员时创建）---
     initial_admin_username: str = "admin"
     initial_admin_password: str = ""  # 留空则随机生成并打印到日志一次

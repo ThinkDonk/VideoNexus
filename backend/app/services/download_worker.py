@@ -117,48 +117,93 @@ async def run_download_task(task_id: int) -> None:
 
 
 async def _poll_progress(wvp, db, task: DownloadTask, channel: Channel, stream_name: str) -> str:
-    """轮询 WVP 下载进度，返回 ZLM 文件直链；期间持续更新 task.progress。"""
+    """等待下载完成并返回 ZLM 文件直链。
+
+    完成判定（按优先级）：
+      A. progress 响应携带 downLoadFilePath（WVP 主动给出直链）
+      B. progress 报"资源未找到"（WVP 已按请求倍速的估算时长拆除会话——设备实际可能
+         仍按 1 倍速在传）后，轮询云端录像表：on_record_mp4 完成入库，该流出现
+         task 开始之后的新文件即为最终 MP4
+    注意：WVP 的 progress 是按"请求倍速"估算的（设备忽略倍速时会虚高），仅用于展示。
+    """
     s = get_settings()
     deadline = time.monotonic() + _max_wait_seconds(task)
-    last_progress = -1
+    task_started_ms = time.time() * 1000 - 60_000  # 云端录像 startTime 对齐窗口（毫秒）
+    session_gone = False
+    last_pct = -1
+
     while time.monotonic() < deadline:
         await asyncio.sleep(s.download_poll_seconds)
-        try:
-            data = await wvp.download_progress(channel.device_id, channel.channel_id, stream_name)
-        except WvpError as e:
-            # 偶发失败重试一次
+
+        if not session_gone:
             try:
                 data = await wvp.download_progress(channel.device_id, channel.channel_id, stream_name)
-            except WvpError:
-                raise RuntimeError(f"查询下载进度失败: {e}")
-        progress = data.get("progress")
-        if isinstance(progress, (int, float)) and int(progress) != last_progress:
-            last_progress = int(progress)
-            task.progress = max(0, min(100, last_progress))
-            await db.commit()
-        dl = data.get("downLoadFilePath")
-        if isinstance(dl, dict):
-            url = dl.get("httpsPath") or dl.get("httpPath")
-            if url:
-                return url
-        if progress == 100:
-            # 部分版本完成后稍等一轮才出现 downLoadFilePath
-            await asyncio.sleep(3)
-            data = await wvp.download_progress(channel.device_id, channel.channel_id, stream_name)
+            except WvpError as e:
+                if "资源未找到" in str(e) or e.code == 404:
+                    session_gone = True
+                    continue
+                try:  # 偶发失败重试一次
+                    data = await wvp.download_progress(channel.device_id, channel.channel_id, stream_name)
+                except WvpError as e2:
+                    if "资源未找到" in str(e2) or e2.code == 404:
+                        session_gone = True
+                        continue
+                    raise RuntimeError(f"查询下载进度失败: {e2}")
+            progress = data.get("progress")
+            if isinstance(progress, (int, float)):
+                pct = max(0, min(99, round(float(progress) * 100)))
+                if pct != last_pct:
+                    last_pct = pct
+                    task.progress = pct
+                    await db.commit()
             dl = data.get("downLoadFilePath")
             if isinstance(dl, dict):
                 url = dl.get("httpsPath") or dl.get("httpPath")
                 if url:
                     return url
-            raise RuntimeError("进度 100% 但未取得文件地址")
-    raise RuntimeError("下载超时未完成")
+            continue
+
+        # 会话已结束：等待云端录像表出现本任务开始后的新文件（文件写完即入库）
+        rec = await _find_cloud_record(wvp, stream_name, task_started_ms)
+        if rec:
+            return rec
+
+    raise RuntimeError("下载超时未完成（未等到录像文件入库）")
+
+
+async def _find_cloud_record(wvp, stream_name: str, started_after_ms: float) -> str | None:
+    """在云端录像中找 stream_name 本次任务开始后完成的新文件，返回 downloadFile 直链。"""
+    from app.config import get_settings
+    try:
+        data = await wvp.cloud_record_list("rtp", stream_name)
+    except WvpError:
+        return None
+    candidates = []
+    for item in (data.get("list") or []):
+        try:
+            st = int(item.get("startTime") or 0)
+        except (TypeError, ValueError):
+            continue
+        if st >= started_after_ms and item.get("filePath"):
+            candidates.append((st, item["filePath"]))
+    if not candidates:
+        return None
+    file_path = max(candidates)[1]
+    s = get_settings()
+    base = (s.zlm_download_base_url or "").rstrip("/")
+    if not base:
+        return None
+    from urllib.parse import urlencode
+    params = {"file_path": file_path}
+    if s.zlm_secret:
+        params["secret"] = s.zlm_secret
+    return f"{base}/index/api/downloadFile?{urlencode(params)}"
 
 
 def _max_wait_seconds(task: DownloadTask) -> float:
-    """等待上限 = 申请时长 / 倍速 + 30 分钟缓冲。"""
-    s = get_settings()
+    """等待上限 = 录像时长（设备可能忽略倍速按 1 倍速传输）+ 30 分钟缓冲。"""
     span = (task.end_time - task.start_time).total_seconds()
-    return max(1800, span / max(1, s.download_speed) + 1800)
+    return max(1800, span + 1800)
 
 
 async def _audit(task: DownloadTask, user: User, channel: Channel, action: str,

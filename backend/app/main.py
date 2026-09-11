@@ -68,6 +68,11 @@ def create_app() -> FastAPI:
             scheduler.shutdown(wait=False)
         await get_wvp().close()
         await close_engine()
+        try:
+            from app.api.dev_proxy import close_proxy_client
+            await close_proxy_client()
+        except ImportError:
+            pass
 
     app.include_router(auth.router)
     app.include_router(channels.router)
@@ -77,6 +82,9 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(admin.write_router)
     app.include_router(internal.router)
+    if get_settings().dev_stream_proxy:
+        from app.api import dev_proxy
+        app.include_router(dev_proxy.router)
     return app
 
 

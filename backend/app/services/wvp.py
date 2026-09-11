@@ -139,6 +139,11 @@ class WvpClient:
     async def download_stop(self, device_id: str, channel_id: str, stream: str) -> dict:
         return await self._get(f"/api/gb_record/download/stop/{device_id}/{channel_id}/{stream}")
 
+    async def cloud_record_list(self, app: str, stream: str, page: int = 1, count: int = 100) -> dict:
+        """查询云端录像（ZLM on_record_mp4 完成即入库，条目出现代表文件已写完）。"""
+        return await self._get("/api/cloud/record/list",
+                               {"app": app, "stream": stream, "page": page, "count": count})
+
     # ---------- 其他 ----------
 
     async def health(self) -> bool:

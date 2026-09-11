@@ -21,6 +21,7 @@ os.environ.update({
     "DOWNLOAD_POLL_SECONDS": "1",
     "FILE_RETENTION_DAYS": "7",
     "TZ": "Asia/Shanghai",
+    "DEV_STREAM_PROXY": "false",  # 测试与本地 .env 隔离（环境变量优先于 dotenv）
 })
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

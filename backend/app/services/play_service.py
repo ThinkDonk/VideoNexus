@@ -22,9 +22,12 @@ def build_stream_urls(host: str, app: str, stream: str, token: str) -> dict:
     ws = "wss" if s.public_https else "ws"
     http = "https" if s.public_https else "http"
     st = f"?st={token}"
+    flv = f"{http}://{host}/stream/{app}/{stream}.live.flv{st}"
     return {
-        "wsFlv": f"{ws}://{host}/stream/{app}/{stream}.live.flv{st}",
-        "flv": f"{http}://{host}/stream/{app}/{stream}.live.flv{st}",
+        # dev_stream_proxy 模式下无 Nginx，ws 协议不通：wsFlv 复用 http-flv（后端代理），
+        # Jessibuca 按 URL 协议自动选择传输方式，前端代码无需感知
+        "wsFlv": flv if s.dev_stream_proxy else f"{ws}://{host}/stream/{app}/{stream}.live.flv{st}",
+        "flv": flv,
         "hls": f"{http}://{host}/stream/{app}/{stream}/hls.m3u8{st}",
     }
 
